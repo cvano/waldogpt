@@ -8,7 +8,7 @@ import os
 model = whisper.load_model("base")
 
 # Set your OpenAI API key
-openai.api_key = "api-key"
+openai.api_key = "your-api-key"
 
 def download_audio(youtube_url):
     ydl_opts = {
@@ -24,17 +24,15 @@ def transcribe_audio_with_timestamps(audio_path):
     audio = whisper.load_audio(audio_path)
     audio = whisper.pad_or_trim(audio)
     mel = whisper.log_mel_spectrogram(audio).to(model.device)
-    options = whisper.DecodingOptions(language="en", fp16=False)
     result = model.transcribe(audio_path)
 
-    # Store transcription segments with timestamps
     segments_with_timestamps = []
     for segment in result['segments']:
         start = segment['start']
         end = segment['end']
         text = segment['text']
         segments_with_timestamps.append({
-            'start': f"{int(start // 60)}:{int(start % 60):02}",  # Format as minutes:seconds
+            'start': f"{int(start // 60)}:{int(start % 60):02}",
             'end': f"{int(end // 60)}:{int(end % 60):02}",
             'text': text
         })
@@ -42,7 +40,6 @@ def transcribe_audio_with_timestamps(audio_path):
     return segments_with_timestamps
 
 def answer_question_with_timestamp(question, segments):
-    # Create a prompt to pass the segments with timestamps to the language model
     transcription_with_timestamps = "\n".join([f"[{seg['start']}-{seg['end']}] {seg['text']}" for seg in segments])
     prompt = (
         f"Here is the video transcription with timestamps:\n\n{transcription_with_timestamps}\n\n"
@@ -58,23 +55,53 @@ def answer_question_with_timestamp(question, segments):
                       {"role": "user", "content": prompt}],
             max_tokens=300,
         )
-        
-        # Parse the response and return the answer with timestamp if found
-        answer = response['choices'][0]['message']['content']
-        return answer
+        return response['choices'][0]['message']['content']
     except Exception as e:
-        print(f"Error: {e}")
-        return "An error occurred while trying to get an answer."
+        return f"An error occurred: {e}"
 
 # Streamlit App Configuration
 st.set_page_config(page_title="WaldoGPT: Advanced YouTube Transcription & Q&A", layout="wide")
 
-# Custom CSS for red and white themed advanced design
-st.markdown(
+# Title and subheader
+st.markdown("<h1 class='title'>🔍 WaldoGPT</h1>", unsafe_allow_html=True)
+st.markdown("<h2 class='subheader'>Find hidden insights in your favorite YouTube videos!</h2>", unsafe_allow_html=True)
+
+# Sidebar for YouTube URL
+st.sidebar.header("YouTube Video")
+youtube_url = st.sidebar.text_input("YouTube URL", placeholder="Enter YouTube URL here")
+if st.sidebar.button("Add Link"):
+    if youtube_url:
+        # Download and process the video
+        try:
+            download_audio(youtube_url)
+            segments = transcribe_audio_with_timestamps('audio.mp3')
+            st.session_state.segments = segments
+            st.session_state.youtube_link = youtube_url
+        except Exception as e:
+            st.error(f"An error occurred during processing: {e}")
+    else:
+        st.warning("Please enter a valid YouTube URL.")
+
+
+# Chatbot Logic
+if 'messages' not in st.session_state:
+    st.session_state['messages'] = []
+
+# Layout columns
+cols = st.columns([2, 1])
+with cols[0]:
+    if st.session_state.get('youtube_link'):
+        st.video(st.session_state.youtube_link)
+
+    if 'segments' in st.session_state:
+        transcription_text = "\n".join([f"[{seg['start']}-{seg['end']}] {seg['text']}" for seg in st.session_state.segments])
+        st.sidebar.text_area("Transcription with Timestamps:", transcription_text, height=400)
+
+with cols[1]:    
+    # Custom CSS styling
+    st.markdown(
     """
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap');
-
     body {
         background-color: #F5F5F5;
         font-family: 'Poppins', sans-serif;
@@ -126,105 +153,69 @@ st.markdown(
         font-family: 'Poppins', sans-serif;
         margin-bottom: 30px;
     }
-    .chatbot-container {
-        border: 2px solid #D32F2F; 
-        border-radius: 12px; 
-        background-color: #FFFFFF; 
-        box-shadow: 0px 4px 8px rgba(0,0,0,.1); 
-        display: flex; 
-        flex-direction: column; 
-        height: 500px; 
-        padding: 15px;
+    .chat-container {
+        height: 300px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column-reverse;
+        padding: 10px;
+        border: 1px solid #D32F2F;
+        background-color: #FFFFFF;
+        border-radius: 10px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
     }
-    .qa-display {
-        flex-grow: 1; 
-        overflow-y: auto; 
-        padding: 10px; 
-        margin-bottom: 10px; 
-        border-bottom: 1px solid #eee;
+    .user-message {
+        text-align: right;
+        color: #D32F2F;
+        background-color: #F8D7DA;
+        padding: 10px;
+        margin: 5px 0;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     }
-    .input-area {
-        padding: 10px; 
-        border-top: 1px solid #D32F2F; 
-        background-color: #fff;
-    }
-    .chat-message {
-        margin-bottom: 10px;
-        padding: 8px;
-        border-radius: 8px;
-    }
-    .question {
-        background-color: #f8f8f8;
-    }
-    .answer {
-        background-color: #fff5f5;
+    .bot-message {
+        text-align: left;
+        color: #D32F2F;
+        background-color: #F9F9F9;
+        padding: 10px;
+        margin: 5px 0;
+        border: 2px solid #D32F2F;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     }
     </style>
     """,
-    unsafe_allow_html=True,
+    unsafe_allow_html=True
 )
 
-# Title and header
-st.markdown("<h1 class='title'>🔍 WaldoGPT</h1>", unsafe_allow_html=True)
-st.markdown("<h2 class='subheader'>Find hidden insights in your favorite YouTube videos!</h2>", unsafe_allow_html=True)
+    chat_history = "<div class='chat-container'>"
+    for message in reversed(st.session_state['messages']):  # Newest at the bottom
+        role = message['role']
+        content = message['content']
+        if role == 'user':
+            chat_history += f"<div class='user-message'>User: {content}</div>"
+        else:
+            chat_history += f"<div class='bot-message'>Bot: {content}</div>"
+    chat_history += "</div>"
 
-# Initialize session state
-if 'qa_list' not in st.session_state:
-    st.session_state.qa_list = []
-if 'transcription' not in st.session_state:
-    st.session_state.transcription = ""
-if 'segments' not in st.session_state:
-    st.session_state.segments = []
-if 'youtube_link' not in st.session_state:
-    st.session_state.youtube_link = ""
+    st.markdown(chat_history, unsafe_allow_html=True)
 
-# Sidebar for YouTube URL
-st.sidebar.header("YouTube Video")
-youtube_url = st.sidebar.text_input("YouTube URL", placeholder="Enter YouTube URL here")
+    with st.form(key='chat_form', clear_on_submit=True):
+        user_input = st.text_input("Type your question here...", placeholder="Ask something...")
+        submit_button = st.form_submit_button("Send")
 
-if st.sidebar.button("Add Link"):
-    if youtube_url:
-        with st.spinner('Processing video...'):
-            download_audio(youtube_url)
-            segments = transcribe_audio_with_timestamps('audio.mp3')
-            st.session_state.segments = segments
-            st.session_state.youtube_link = youtube_url
-    else:
-        st.warning("Please enter a valid YouTube URL.")
+        if submit_button and user_input:
+            # Append the user's input immediately to the chat history
+            st.session_state['messages'].append({'role': 'user', 'content': user_input})
 
-# Sidebar for Transcription
-if st.session_state.segments:
-    transcription_text = "\n".join([f"[{seg['start']}-{seg['end']}] {seg['text']}" for seg in st.session_state.segments])
-    st.sidebar.text_area("Transcription with Timestamps:", transcription_text, height=200)
+            # Generate bot response immediately
+            if 'segments' in st.session_state:
+                bot_response = answer_question_with_timestamp(user_input, st.session_state['segments'])
+            else:
+                bot_response = "Transcription is not available. Please upload a YouTube link and try again."
 
-# Main content layout
-if st.session_state.segments:
-    cols = st.columns([2, 1])
-    
-    # Video and chatbot column
-    with cols[0]:
-        st.video(st.session_state.youtube_link)
-    
-    # Chatbot column
-    with cols[1]:
-        st.markdown("<h4>Q&A:</h4>", unsafe_allow_html=True)
+            # Append bot response to chat history
+            st.session_state['messages'].append({'role': 'bot', 'content': bot_response})
 
-        # Form to handle question input and submit
-        with st.form(key='question_form', clear_on_submit=True):
-            user_question = st.text_input("Ask a question:", placeholder="Type your question here...")
-            submit_button = st.form_submit_button("Ask")
-
-            if submit_button and user_question:
-                answer = answer_question_with_timestamp(user_question, st.session_state.segments)
-                
-                # Append question and answer to the list in session state
-                st.session_state.qa_list.append({
-                    'question': user_question,
-                    'answer': answer
-                })
-
-        # Display questions and answers
-        with st.container():
-            for qa in st.session_state.qa_list:
-                st.markdown(f"<div class='chat-message question'>{qa['question']}</div>", unsafe_allow_html=True)
-                st.markdown(f"<div class='chat-message answer'>{qa['answer']}</div>", unsafe_allow_html=True)
+            # Force Streamlit to rerun and display the updated chat history
+            st.rerun()
