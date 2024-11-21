@@ -5,5 +5,5 @@ Under Construction
 
 AI powered video summary, seeking, and interaction.
 
-Utilizing Vid2Seq and OpenAI.
+Utilizing OpenAI Whisper and GPT3.5-turbo.
 
